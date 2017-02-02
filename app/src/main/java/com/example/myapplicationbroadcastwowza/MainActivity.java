@@ -1,10 +1,13 @@
 package com.example.myapplicationbroadcastwowza;
 
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
@@ -16,6 +19,7 @@ import com.wowza.gocoder.sdk.api.devices.WZAudioDevice;
 import com.wowza.gocoder.sdk.api.errors.WZError;
 import com.wowza.gocoder.sdk.api.errors.WZStreamingError;
 import com.wowza.gocoder.sdk.api.logging.WZLog;
+import com.wowza.gocoder.sdk.api.mp4.WZMP4Writer;
 import com.wowza.gocoder.sdk.api.status.WZState;
 import com.wowza.gocoder.sdk.api.status.WZStatus;
 import com.wowza.gocoder.sdk.api.status.WZStatusCallback;
@@ -38,6 +42,15 @@ public class MainActivity extends AppCompatActivity implements WZStatusCallback 
 
     // The broadcast configuration settings
     private WZBroadcastConfig goCoderBroadcastConfig;
+    private WZMP4Writer mp4Writer;
+
+    private Button broadcastButton;
+    private Button playButton;
+    private Button stopButton;
+
+    private File savedFile;
+
+    private MediaPlayer mediaPlayer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,14 +90,15 @@ public class MainActivity extends AppCompatActivity implements WZStatusCallback 
         // Designate the audio device as the audio broadcaster
         goCoderBroadcastConfig.setAudioBroadcaster(goCoderAudioDevice);
 
-        // Associate the onClick() method as the callback for the broadcast button's click event
-        Button broadcastButton = (Button) findViewById(R.id.broadcast_button);
-        broadcastButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                toggleBroadcast();
-            }
-        });
+        // Use the WZMP4Writer to save the audio file while broadcasting
+        mp4Writer = new WZMP4Writer();
+        goCoderBroadcastConfig.registerAudioSink(mp4Writer);
+        goCoderBroadcastConfig.registerVideoSink(mp4Writer);
+        goCoderBroadcastConfig.setVideoEnabled(false);
+
+        broadcastButton = (Button) findViewById(R.id.broadcast_button);
+        playButton = (Button) findViewById(R.id.play_button);
+        stopButton = (Button) findViewById(R.id.stop_button);
     }
 
     private void toggleBroadcast() {
@@ -95,8 +109,22 @@ public class MainActivity extends AppCompatActivity implements WZStatusCallback 
         } else if (goCoderBroadcaster.getStatus().isRunning()) {
             // Stop the broadcast that is currently running
             goCoderBroadcaster.endBroadcast(this);
+            broadcastButton.setText(R.string.start_broadcast);
+            playButton.setEnabled(true);
+            stopButton.setEnabled(true);
         } else {
             // Start streaming
+            broadcastButton.setText(R.string.stop_broadcast);
+
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
+            File outputFile = getOutputMediaFile();
+            if (outputFile != null)
+                mp4Writer.setFilePath(outputFile.toString());
+            else {
+                Log.w(TAG, "toggleBroadcast: " + "Could not create or access the directory in which to store the MP");
+                return;
+            }
+
             goCoderBroadcaster.startBroadcast(goCoderBroadcastConfig, this);
         }
     }
@@ -175,7 +203,26 @@ public class MainActivity extends AppCompatActivity implements WZStatusCallback 
 
         // Create a media file name
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        return new File(mediaStorageDir.getPath() + File.separator +
-                "WOWZA_" + timeStamp + ".mp4");
+        savedFile = new File(mediaStorageDir.getPath() + File.separator + "WOWZA_" + timeStamp + ".mp3");
+        return savedFile;
+    }
+
+    public void playMagic(View view) {
+        mediaPlayer = MediaPlayer.create(this, Uri.parse(savedFile.toString()));
+        mediaPlayer.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mediaPlayer) {
+                mediaPlayer.start();
+            }
+        });
+    }
+
+    public void stopMagic(View view) {
+        mediaPlayer.stop();
+        mediaPlayer.release();
+    }
+
+    public void startBroadcast(View view) {
+        toggleBroadcast();
     }
 }
